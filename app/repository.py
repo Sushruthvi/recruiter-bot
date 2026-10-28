@@ -107,8 +107,8 @@ SKILL_OVERLAP_SQL = """
        AND (:candidate_id IS NULL OR c.id = :candidate_id)
      GROUP BY c.id, j.id
 """
-
-
+                       
+                          
 def skill_overlap(
     conn: sqlite3.Connection,
     job_id: int | None = None,
@@ -130,6 +130,73 @@ def skill_overlap(
             "matched_count": r["matched_count"],
             "matched_skills": _split(r["matched_skills"]),
             "missing_skills": _split(r["missing_skills"]),
+        }
+        for r in rows
+    ]
+
+
+# Same shape as SKILL_OVERLAP_SQL, but for the job's culture keywords versus
+# the candidate's traits (both live in the shared `traits` table).
+CULTURE_OVERLAP_SQL = """
+    SELECT c.id AS candidate_id,
+           j.id AS job_id,
+           COUNT(jk.trait_id) AS culture_total,
+           group_concat(CASE WHEN ct.trait_id IS NOT NULL THEN t.name END, ',') AS shared_traits
+      FROM jobs j
+      CROSS JOIN candidates c
+      LEFT JOIN job_culture_keywords jk ON jk.job_id = j.id
+      LEFT JOIN traits t                ON t.id = jk.trait_id
+      LEFT JOIN candidate_traits ct     ON ct.candidate_id = c.id AND ct.trait_id = jk.trait_id
+     WHERE (:job_id IS NULL OR j.id = :job_id)
+       AND (:candidate_id IS NULL OR c.id = :candidate_id)
+     GROUP BY c.id, j.id
+"""
+
+# Everything the scorer needs for each pair, in one round trip. The two
+# overlap queries are reused as CTEs so each is still written only once.
+MATCH_INPUTS_SQL = f"""
+    WITH skill AS ({SKILL_OVERLAP_SQL}),
+         culture AS ({CULTURE_OVERLAP_SQL})
+    SELECT c.id AS candidate_id, c.name AS candidate_name,
+           c.experience_years, c.open_to_work, c.notice_days,
+           j.id AS job_id, j.title AS job_title, j.min_experience_years,
+           skill.required_count, skill.matched_count,
+           skill.matched_skills, skill.missing_skills,
+           culture.culture_total, culture.shared_traits
+      FROM skill
+      JOIN culture ON culture.candidate_id = skill.candidate_id
+                  AND culture.job_id = skill.job_id
+      JOIN candidates c ON c.id = skill.candidate_id
+      JOIN jobs j ON j.id = skill.job_id
+"""
+
+
+def match_inputs(
+    conn: sqlite3.Connection,
+    job_id: int | None = None,
+    candidate_id: int | None = None,
+) -> list[dict]:
+    """Per candidate/job pair: the facts the scoring functions work from."""
+    rows = conn.execute(
+        MATCH_INPUTS_SQL, {"job_id": job_id, "candidate_id": candidate_id}
+    ).fetchall()
+    return [
+        {
+            "candidate_id": r["candidate_id"],
+            "candidate_name": r["candidate_name"],
+            "experience_years": r["experience_years"],
+            "open_to_work": r["open_to_work"],
+            "notice_days": r["notice_days"],
+            "availability": availability_label(r["open_to_work"], r["notice_days"]),
+            "job_id": r["job_id"],
+            "job_title": r["job_title"],
+            "min_experience_years": r["min_experience_years"],
+            "required_count": r["required_count"],
+            "matched_count": r["matched_count"],
+            "matched_skills": _split(r["matched_skills"]),
+            "missing_skills": _split(r["missing_skills"]),
+            "culture_total": r["culture_total"],
+            "shared_traits": _split(r["shared_traits"]),
         }
         for r in rows
     ]
