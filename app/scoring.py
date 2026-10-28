@@ -22,6 +22,13 @@ class Weights:
     experience: float = 0.25
     culture: float = 0.10
 
+    def normalized(self) -> "Weights":
+        """Rescale so the three weights sum to 1 (only their ratio matters)."""
+        total = self.skill + self.experience + self.culture
+        if total <= 0:
+            raise ValueError("At least one weight must be greater than zero")
+        return Weights(self.skill / total, self.experience / total, self.culture / total)
+
 
 DEFAULT_WEIGHTS = Weights()
 

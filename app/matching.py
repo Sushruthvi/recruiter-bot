@@ -25,22 +25,37 @@ def _ranked(pairs: list[dict], weights: Weights, id_key: str) -> list[tuple[dict
 
 
 def matches_for_job(
-    conn: sqlite3.Connection, job_id: int, weights: Weights = DEFAULT_WEIGHTS
+    conn: sqlite3.Connection,
+    job_id: int,
+    weights: Weights = DEFAULT_WEIGHTS,
+    include_unavailable: bool = True,
+    limit: int | None = None,
 ) -> list[dict]:
-    """Candidates ranked for one job."""
+    """Candidates ranked for one job.
+
+    include_unavailable=False drops candidates who are not looking, instead of
+    just ranking them lower.
+    """
     pairs = repository.match_inputs(conn, job_id=job_id)
+    if not include_unavailable:
+        pairs = [p for p in pairs if p["open_to_work"]]
+    ranked = _ranked(pairs, weights, "candidate_id")[:limit]
     return [
         {"candidate_id": p["candidate_id"], "candidate_name": p["candidate_name"], **r}
-        for p, r in _ranked(pairs, weights, "candidate_id")
+        for p, r in ranked
     ]
 
 
 def matches_for_candidate(
-    conn: sqlite3.Connection, candidate_id: int, weights: Weights = DEFAULT_WEIGHTS
+    conn: sqlite3.Connection,
+    candidate_id: int,
+    weights: Weights = DEFAULT_WEIGHTS,
+    limit: int | None = None,
 ) -> list[dict]:
     """Jobs ranked for one candidate."""
     pairs = repository.match_inputs(conn, candidate_id=candidate_id)
+    ranked = _ranked(pairs, weights, "job_id")[:limit]
     return [
         {"job_id": p["job_id"], "job_title": p["job_title"], **r}
-        for p, r in _ranked(pairs, weights, "job_id")
+        for p, r in ranked
     ]
