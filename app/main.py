@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException
 
-from app import repository
+from app import matching, repository
 from app.db import get_connection, init_db
-from app.schemas import Candidate, Job
+from app.schemas import Candidate, CandidateMatch, Job, JobMatch
 
 
 @asynccontextmanager
@@ -50,6 +50,22 @@ def get_candidate(candidate_id: int, conn: sqlite3.Connection = Depends(db_conne
     if candidate is None:
         raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
     return candidate
+
+
+@app.get("/candidates/{candidate_id}/matches", response_model=list[JobMatch])
+def candidate_matches(candidate_id: int, conn: sqlite3.Connection = Depends(db_connection)):
+    """Jobs ranked best-first for one candidate."""
+    if repository.get_candidate(conn, candidate_id) is None:
+        raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
+    return matching.matches_for_candidate(conn, candidate_id)
+
+
+@app.get("/jobs/{job_id}/matches", response_model=list[CandidateMatch])
+def job_matches(job_id: int, conn: sqlite3.Connection = Depends(db_connection)):
+    """Candidates ranked best-first for one job."""
+    if repository.get_job(conn, job_id) is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    return matching.matches_for_job(conn, job_id)
 
 
 @app.get("/jobs", response_model=list[Job])
