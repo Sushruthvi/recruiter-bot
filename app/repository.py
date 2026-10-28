@@ -85,3 +85,51 @@ def list_jobs(conn: sqlite3.Connection) -> list[dict]:
 def get_job(conn: sqlite3.Connection, job_id: int) -> dict | None:
     row = conn.execute(JOB_SELECT + " WHERE j.id = ?", (job_id,)).fetchone()
     return _job(row) if row else None
+
+
+# One row per (candidate, job) pair. The LEFT JOIN onto candidate_skills is NULL
+# exactly when the candidate lacks a required skill, so a single GROUP BY yields
+# the counts plus the matched and missing skill names. LEFT JOINs also keep
+# jobs that happen to list no required skills (required_count = 0).
+SKILL_OVERLAP_SQL = """
+    SELECT c.id AS candidate_id,
+           j.id AS job_id,
+           COUNT(js.skill_id) AS required_count,
+           COUNT(cs.skill_id) AS matched_count,
+           group_concat(CASE WHEN cs.skill_id IS NOT NULL THEN s.name END, ',') AS matched_skills,
+           group_concat(CASE WHEN cs.skill_id IS NULL THEN s.name END, ',')     AS missing_skills
+      FROM jobs j
+      CROSS JOIN candidates c
+      LEFT JOIN job_skills js       ON js.job_id = j.id
+      LEFT JOIN skills s            ON s.id = js.skill_id
+      LEFT JOIN candidate_skills cs ON cs.candidate_id = c.id AND cs.skill_id = js.skill_id
+     WHERE (:job_id IS NULL OR j.id = :job_id)
+       AND (:candidate_id IS NULL OR c.id = :candidate_id)
+     GROUP BY c.id, j.id
+"""
+
+
+def skill_overlap(
+    conn: sqlite3.Connection,
+    job_id: int | None = None,
+    candidate_id: int | None = None,
+) -> list[dict]:
+    """How many of each job's required skills each candidate has.
+
+    Pass job_id and/or candidate_id to narrow the result; with neither, every
+    candidate/job pair is returned.
+    """
+    rows = conn.execute(
+        SKILL_OVERLAP_SQL, {"job_id": job_id, "candidate_id": candidate_id}
+    ).fetchall()
+    return [
+        {
+            "candidate_id": r["candidate_id"],
+            "job_id": r["job_id"],
+            "required_count": r["required_count"],
+            "matched_count": r["matched_count"],
+            "matched_skills": _split(r["matched_skills"]),
+            "missing_skills": _split(r["missing_skills"]),
+        }
+        for r in rows
+    ]
