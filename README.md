@@ -65,6 +65,18 @@ Example: the top match for job 1, *Backend Detective*:
 }
 ```
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+About 70 tests, each run against a fresh temporary database: the scoring maths
+(pure functions), ranking and tie-breaks, weight normalisation, the seed script
+(including idempotency and foreign-key enforcement), every endpoint's success
+and error cases, and the Part 2 answers.
+
 ## Design decisions and trade-offs
 
 ### Schema
@@ -118,7 +130,7 @@ tunable weights are for.
   pre-filter with the reverse skill indexes (candidates sharing at least one
   required skill), rank and paginate in SQL, and cache results.
 - SQLite is the right size for this prototype; production would use Postgres.
-- No authentication, and no automated tests yet.
+- No authentication.
 
 ## Part 2: SQL Detective
 
@@ -155,4 +167,5 @@ app/
 schema.sql        hand-written DDL
 data/             seed data
 scripts/          Part 2 runner
+tests/            pytest suite
 ```
